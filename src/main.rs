@@ -6,7 +6,7 @@ use std::{
     error::Error,
     fs::File,
     io::{Cursor, Read, Write},
-    path::PathBuf,
+    path::{Path, PathBuf},
     process::Command,
     thread::sleep,
     time::Duration,
@@ -25,6 +25,15 @@ enum Errors {
     ZipExtractError(#[from] zip_extract::ZipExtractError),
     #[error("Generic error: {0:?}")]
     GenericError(#[from] Box<dyn Error>),
+}
+
+fn check_game_directory() -> Result<bool, Errors> {
+    println!("Checking current directory: {:?}", current_dir()?);
+    let game_path = Path::new(r"\steamapps\common\Granblue Fantasy Versus Rising").to_str();
+    return Ok(current_dir()?
+        .to_str()
+        .unwrap()
+        .contains(game_path.unwrap()));
 }
 
 fn get_latest_version() -> Result<String, Errors> {
@@ -139,6 +148,12 @@ fn open_game() -> Result<(), Errors> {
 }
 
 fn main() -> Result<(), Errors> {
+    if !check_game_directory()? {
+        println!("Executable not on game directory");
+        sleep(Duration::from_secs(2));
+        return Ok(());
+    }
+
     println!("Updating Frame Meter Mod");
     let version = get_latest_version()?;
     if version != check_current_version()? {
@@ -147,6 +162,7 @@ fn main() -> Result<(), Errors> {
         extract_file(file, &version)?;
         println!("Mod updated!");
     }
+
     open_game()?;
     Ok(())
 }
