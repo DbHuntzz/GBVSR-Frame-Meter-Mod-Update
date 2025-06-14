@@ -1,9 +1,10 @@
+use derive_more::From;
 use regex;
 use reqwest::blocking as req;
 use scraper::{Html, Selector};
 use std::{
     env::current_dir,
-    error::Error,
+    fmt::Display,
     fs::File,
     io::{Cursor, Read, Write},
     path::{Path, PathBuf},
@@ -13,21 +14,30 @@ use std::{
 };
 use zip_extract;
 
-#[derive(Debug, thiserror::Error)]
-enum Errors {
-    #[error("URL request error: {0:?}")]
-    ReqwestError(#[from] reqwest::Error),
-    #[error("Parsing error: {0:?}")]
-    ParsingError(#[from] scraper::error::SelectorErrorKind<'static>),
-    #[error("IO error: {0:?}")]
-    IOError(#[from] std::io::Error),
-    #[error("Zip Extract error: {0:?}")]
-    ZipExtractError(#[from] zip_extract::ZipExtractError),
-    #[error("Generic error: {0:?}")]
-    GenericError(#[from] Box<dyn Error>),
+#[derive(Debug, From)]
+enum Error {
+    ReqwestError(reqwest::Error),
+    ParsingError(scraper::error::SelectorErrorKind<'static>),
+    IOError(std::io::Error),
+    ZipExtractError(zip_extract::ZipExtractError),
+    GenericError(Box<dyn std::error::Error>),
 }
 
-fn check_game_directory() -> Result<bool, Errors> {
+impl Display for Error {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Error::ReqwestError(error) => write!(f, "{error:?}"),
+            Error::ParsingError(selector_error_kind) => write!(f, "{selector_error_kind:?}"),
+            Error::IOError(error) => write!(f, "{error:?}"),
+            Error::ZipExtractError(zip_extract_error) => write!(f, "{zip_extract_error:?}"),
+            Error::GenericError(error) => write!(f, "{error:?}"),
+        }
+    }
+}
+
+type Result<T> = core::result::Result<T, Error>;
+
+fn check_game_directory() -> Result<bool> {
     println!("Checking current directory: {:?}", current_dir()?);
     let game_path = Path::new(r"\steamapps\common\Granblue Fantasy Versus Rising").to_str();
     return Ok(current_dir()?
@@ -36,7 +46,7 @@ fn check_game_directory() -> Result<bool, Errors> {
         .contains(game_path.unwrap()));
 }
 
-fn get_latest_version() -> Result<String, Errors> {
+fn get_latest_version() -> Result<String> {
     let url = "https://github.com/agersant/gbvsr-frame-meter/releases/latest";
     let html = Html::parse_document(req::get(url)?.text()?.as_str());
     let selector = Selector::parse("title")?;
@@ -58,7 +68,7 @@ fn get_latest_version() -> Result<String, Errors> {
     Ok(version)
 }
 
-fn check_current_version() -> Result<String, Errors> {
+fn check_current_version() -> Result<String> {
     let path = current_dir()?.join("frame_meter.ver");
     if let Ok(mut file) = File::open(path) {
         let mut buf = String::new();
@@ -71,7 +81,7 @@ fn check_current_version() -> Result<String, Errors> {
     }
 }
 
-fn get_link(version: &String) -> Result<String, Errors> {
+fn get_link(version: &String) -> Result<String> {
     let url = "https://github.com/agersant/gbvsr-frame-meter/releases/expanded_assets";
     let version_url = format!("{}/{}", url, version);
     let html = Html::parse_document(req::get(version_url)?.text()?.as_str());
@@ -92,7 +102,7 @@ fn get_link(version: &String) -> Result<String, Errors> {
     Ok(link)
 }
 
-fn download_file(link: &String) -> Result<Vec<u8>, Errors> {
+fn download_file(link: &String) -> Result<Vec<u8>> {
     let mut res = req::get(link)?;
     let mut buf: Vec<u8> = vec![];
     res.copy_to(&mut buf)?;
@@ -100,7 +110,7 @@ fn download_file(link: &String) -> Result<Vec<u8>, Errors> {
     Ok(buf)
 }
 
-fn extract_file(buf: Vec<u8>, version: &String) -> Result<(), Errors> {
+fn extract_file(buf: Vec<u8>, version: &String) -> Result<()> {
     // r"RED\Binaries\Win64"
     let extract_directory = current_dir()?.join(PathBuf::from(r"RED\Binaries\Win64"));
     zip_extract::extract(Cursor::new(buf), &extract_directory, true)?;
@@ -124,7 +134,7 @@ fn hide_console_window() {
     }
 }
 
-fn open_game() -> Result<(), Errors> {
+fn open_game() -> Result<()> {
     println!("Opening game");
     let env_exe = std::env::current_exe()?;
     let game = current_dir()?
@@ -147,7 +157,7 @@ fn open_game() -> Result<(), Errors> {
     Ok(())
 }
 
-fn main() -> Result<(), Errors> {
+fn main() -> Result<()> {
     if !check_game_directory()? {
         println!("Executable not on game directory");
         sleep(Duration::from_secs(2));
